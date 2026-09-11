@@ -12,10 +12,10 @@ import traceback
 import psycopg
 from psycopg.rows import dict_row
 
+from config import DB_DSN
 from handlers import HANDLERS
 from worker import claim_next_job
 
-DB_DSN = "postgresql://user:password@localhost:5432/yourdb"  # replace with real config
 POLL_INTERVAL_SECONDS = 5
 RETRY_DELAY_MINUTES = 60  # matches the "retry after 1 hour" decision
 
@@ -76,7 +76,7 @@ def mark_failed_or_retry(conn: psycopg.Connection, job: dict, error: str):
                 SET status = 'pending',
                     attempts = %s,
                     last_error = %s,
-                    run_at = NOW() + (%s || ' minutes')::interval
+                    run_at = NOW() + (%s * INTERVAL '1 minute')
                 WHERE id = %s
                 """,
                 (new_attempts, error, RETRY_DELAY_MINUTES, job["id"]),
@@ -102,17 +102,26 @@ def run_one_job(conn: psycopg.Connection, job: dict):
 
 def worker_loop():
     print("Worker started, polling for jobs...")
-    while True:
-        with psycopg.connect(DB_DSN, row_factory=dict_row) as conn:
-            job = claim_next_job(conn)
-            conn.commit()  # releases the FOR UPDATE lock, confirms the claim
+    try:
+        while True:
+            job = None
+            try:
+                with psycopg.connect(DB_DSN, row_factory=dict_row) as conn:
+                    job = claim_next_job(conn)
+                    conn.commit()  # releases the FOR UPDATE lock, confirms the claim
 
-            if job is None:
+                    if job is not None:
+                        print(f"Claimed job {job['id']} ({job['job_type']})")
+                        run_one_job(conn, job)
+            except psycopg.Error as e:
+                print(f"Database error: {e}. Retrying in {POLL_INTERVAL_SECONDS}s...")
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
-            print(f"Claimed job {job['id']} ({job['job_type']})")
-            run_one_job(conn, job)
+            if job is None:
+                time.sleep(POLL_INTERVAL_SECONDS)
+    except KeyboardInterrupt:
+        print("\nWorker stopped gracefully.")
 
 
 if __name__ == "__main__":

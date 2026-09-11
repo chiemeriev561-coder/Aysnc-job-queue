@@ -15,6 +15,8 @@ from pydantic import BaseModel
 
 from config import DB_DSN
 
+app = FastAPI()
+
 
 class JobCreate(BaseModel):
     job_type: str
@@ -51,7 +53,7 @@ def get_job(job_id: int):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, job_type, status, attempts, max_attempts,
+                SELECT id, job_type, payload, status, attempts, max_attempts,
                        run_at, last_error, created_at
                 FROM jobs
                 WHERE id = %s
@@ -63,6 +65,6 @@ def get_job(job_id: int):
     if row is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    columns = ["id", "job_type", "status", "attempts", "max_attempts",
+    columns = ["id", "job_type", "payload", "status", "attempts", "max_attempts",
                "run_at", "last_error", "created_at"]
     return dict(zip(columns, row))
