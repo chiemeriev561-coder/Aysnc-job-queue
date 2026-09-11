@@ -13,9 +13,7 @@ import psycopg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI()
-
-DB_DSN = "postgresql://user:password@localhost:5432/yourdb"  # replace with real config
+from config import DB_DSN
 
 
 class JobCreate(BaseModel):
