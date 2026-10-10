@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/jobqueue/venv/bin/python",
+    "python.terminal.activateEnvironment": true
+}

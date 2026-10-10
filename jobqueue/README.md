@@ -22,6 +22,10 @@ source venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
+When opening the repository root in VS Code, the workspace selects `jobqueue/venv`
+as its Python interpreter and activates it in new integrated terminals. For other
+terminals, activate it manually with `source venv/bin/activate` from this directory.
+
 Create the queue table in PostgreSQL:
 
 ```sql
@@ -44,7 +48,9 @@ CREATE INDEX jobs_pending_run_at_idx
     WHERE status = 'pending';
 ```
 
-Update `DB_DSN` in both `api.py` and `run_worker.py` with your PostgreSQL connection string. For example:
+Set `DB_DSN` in this directory's `.env` file (copy `.env.example` as a starting point)
+to your PostgreSQL connection string. `config.py` loads this setting for both the API
+and worker.
 
 ```python
 DB_DSN = "postgresql://user:password@localhost:5432/yourdb"
@@ -118,4 +124,3 @@ An unknown job type is marked `failed` immediately. Handler exceptions are retri
 | `run_worker.py` | Worker polling loop and retry handling |
 | `handlers.py` | Job handler registry and example handler |
 | `requirements.txt` | Python dependencies |
-

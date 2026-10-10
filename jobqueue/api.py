@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 import psycopg
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from config import DB_DSN
 
@@ -20,8 +20,15 @@ app = FastAPI()
 
 class JobCreate(BaseModel):
     job_type: str
-    payload: dict[str, Any] = {}
+    payload: dict[str, Any] = Field(default_factory=dict)
     run_at: Optional[datetime] = None  # defaults to "now" if not given
+
+    @field_validator("run_at")
+    @classmethod
+    def assume_utc_for_naive_run_at(cls, value: Optional[datetime]) -> Optional[datetime]:
+        if value is not None and value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 @app.post("/jobs", status_code=201)

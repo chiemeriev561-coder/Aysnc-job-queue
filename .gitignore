@@ -14,5 +14,6 @@ env/
 .env.local
 
 # IDE & Editor
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
