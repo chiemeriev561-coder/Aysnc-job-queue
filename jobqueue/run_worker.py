@@ -23,7 +23,7 @@ RETRY_DELAY_MINUTES = 60  # matches the "retry after 1 hour" decision
 def mark_completed(conn: psycopg.Connection, job_id: int):
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE jobs SET status = 'completed' WHERE id = %s",
+            "UPDATE jobs SET status = 'completed', locked_at = NULL WHERE id = %s",
             (job_id,),
         )
     conn.commit()
@@ -39,7 +39,8 @@ def mark_permanently_failed(conn: psycopg.Connection, job: dict, error: str):
         cur.execute(
             """
             UPDATE jobs
-            SET status = 'failed', attempts = attempts + 1, last_error = %s
+            SET status = 'failed', attempts = attempts + 1,
+                last_error = %s, locked_at = NULL
             WHERE id = %s
             """,
             (error, job["id"]),
@@ -62,7 +63,8 @@ def mark_failed_or_retry(conn: psycopg.Connection, job: dict, error: str):
             cur.execute(
                 """
                 UPDATE jobs
-                SET status = 'failed', attempts = %s, last_error = %s
+                SET status = 'failed', attempts = %s, last_error = %s,
+                    locked_at = NULL
                 WHERE id = %s
                 """,
                 (new_attempts, error, job["id"]),
@@ -76,6 +78,7 @@ def mark_failed_or_retry(conn: psycopg.Connection, job: dict, error: str):
                 SET status = 'pending',
                     attempts = %s,
                     last_error = %s,
+                    locked_at = NULL,
                     run_at = NOW() + (%s * INTERVAL '1 minute')
                 WHERE id = %s
                 """,

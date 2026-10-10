@@ -10,6 +10,8 @@ walked through.
 import psycopg
 from psycopg.rows import dict_row
 
+STALE_JOB_TIMEOUT_MINUTES = 15
+
 
 def claim_next_job(conn: psycopg.Connection) -> dict | None:
     """
@@ -20,6 +22,34 @@ def claim_next_job(conn: psycopg.Connection) -> dict | None:
     the lock from FOR UPDATE is only held until commit/rollback.
     """
     with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            WITH expired_job AS (
+                SELECT id
+                FROM jobs
+                WHERE status = 'processing'
+                  AND locked_at <= NOW() - (%s * INTERVAL '1 minute')
+                ORDER BY locked_at
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE jobs
+            SET status = CASE
+                    WHEN jobs.attempts + 1 >= jobs.max_attempts THEN 'failed'
+                    ELSE 'pending'
+                END,
+                attempts = jobs.attempts + 1,
+                locked_at = NULL,
+                last_error = %s,
+                run_at = NOW()
+            FROM expired_job
+            WHERE jobs.id = expired_job.id
+            """,
+            (
+                STALE_JOB_TIMEOUT_MINUTES,
+                f"Worker lease expired after {STALE_JOB_TIMEOUT_MINUTES} minutes",
+            ),
+        )
         cur.execute(
             """
             SELECT id, job_type, payload, attempts, max_attempts

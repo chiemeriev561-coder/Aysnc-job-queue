@@ -75,6 +75,10 @@ python run_worker.py
 ```
 
 Multiple worker processes can run at the same time. Each worker polls every five seconds and claims an available pending job.
+If a worker exits while handling a job, another worker reclaims it after its
+15-minute processing lease expires. Lease expirations count toward `max_attempts`.
+Handlers that can run longer than 15 minutes need a heartbeat/lease extension
+before increasing their execution time, or another worker may execute them again.
 
 ## API usage
 
