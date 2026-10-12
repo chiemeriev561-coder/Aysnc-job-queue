@@ -11,11 +11,17 @@ from typing import Any, Optional
 
 import psycopg
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 
 from config import DB_DSN
 
 app = FastAPI()
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    return RedirectResponse(url="/docs")
 
 
 class JobCreate(BaseModel):
