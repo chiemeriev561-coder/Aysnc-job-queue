@@ -59,8 +59,12 @@ DB_DSN = "postgresql://user:password@localhost:5432/yourdb"
 ## Run the API
 
 ```bash
-source venv/bin/activate
-uvicorn api:app --reload
+cd "/home/victor/Documents/Async  job queue/jobqueue"
+source ../venv/bin/activate
+cd jobqueue
+uvicorn api:app --reload --port 8000
+
+
 ```
 
 The API is available at `http://127.0.0.1:8000`. Interactive documentation is available at `/docs`.

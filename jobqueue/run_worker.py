@@ -12,10 +12,10 @@ import traceback
 import psycopg
 from psycopg.rows import dict_row
 
-from config import DB_DSN
 from handlers import HANDLERS
 from worker import claim_next_job
 
+DB_DSN = "postgresql://user:password@localhost:5432/yourdb"  # replace with real config
 POLL_INTERVAL_SECONDS = 5
 RETRY_DELAY_MINUTES = 60  # matches the "retry after 1 hour" decision
 
@@ -23,7 +23,7 @@ RETRY_DELAY_MINUTES = 60  # matches the "retry after 1 hour" decision
 def mark_completed(conn: psycopg.Connection, job_id: int):
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE jobs SET status = 'completed', locked_at = NULL WHERE id = %s",
+            "UPDATE jobs SET status = 'completed' WHERE id = %s",
             (job_id,),
         )
     conn.commit()
@@ -39,8 +39,7 @@ def mark_permanently_failed(conn: psycopg.Connection, job: dict, error: str):
         cur.execute(
             """
             UPDATE jobs
-            SET status = 'failed', attempts = attempts + 1,
-                last_error = %s, locked_at = NULL
+            SET status = 'failed', last_error = %s
             WHERE id = %s
             """,
             (error, job["id"]),
@@ -52,37 +51,37 @@ def mark_permanently_failed(conn: psycopg.Connection, job: dict, error: str):
 
 def mark_failed_or_retry(conn: psycopg.Connection, job: dict, error: str):
     """
-    If attempts is still under max_attempts, bump attempts and push
-    run_at into the future so it gets picked up again later.
-    Otherwise mark it permanently 'failed'.
+    If attempts is still under max_attempts, push run_at into the future
+    so it gets picked up again later. Otherwise mark it permanently 'failed'.
+
+    NOTE: attempts is already incremented at claim time (see worker.py),
+    and job["attempts"] holds the fresh value. So this function never
+    touches the counter; it only compares it.
     """
-    new_attempts = job["attempts"] + 1
+    attempts = job["attempts"]
 
     with conn.cursor() as cur:
-        if new_attempts >= job["max_attempts"]:
+        if attempts >= job["max_attempts"]:
             cur.execute(
                 """
                 UPDATE jobs
-                SET status = 'failed', attempts = %s, last_error = %s,
-                    locked_at = NULL
+                SET status = 'failed', last_error = %s
                 WHERE id = %s
                 """,
-                (new_attempts, error, job["id"]),
+                (error, job["id"]),
             )
             # TODO: this is where you'd trigger an alert (email/Slack/etc)
-            print(f"Job {job['id']} permanently failed after {new_attempts} attempts")
+            print(f"Job {job['id']} permanently failed after {attempts} attempts")
         else:
             cur.execute(
                 """
                 UPDATE jobs
                 SET status = 'pending',
-                    attempts = %s,
                     last_error = %s,
-                    locked_at = NULL,
-                    run_at = NOW() + (%s * INTERVAL '1 minute')
+                    run_at = NOW() + (%s || ' minutes')::interval
                 WHERE id = %s
                 """,
-                (new_attempts, error, RETRY_DELAY_MINUTES, job["id"]),
+                (error, RETRY_DELAY_MINUTES, job["id"]),
             )
     conn.commit()
 
@@ -105,26 +104,17 @@ def run_one_job(conn: psycopg.Connection, job: dict):
 
 def worker_loop():
     print("Worker started, polling for jobs...")
-    try:
-        while True:
-            job = None
-            try:
-                with psycopg.connect(DB_DSN, row_factory=dict_row) as conn:
-                    job = claim_next_job(conn)
-                    conn.commit()  # releases the FOR UPDATE lock, confirms the claim
-
-                    if job is not None:
-                        print(f"Claimed job {job['id']} ({job['job_type']})")
-                        run_one_job(conn, job)
-            except psycopg.Error as e:
-                print(f"Database error: {e}. Retrying in {POLL_INTERVAL_SECONDS}s...")
-                time.sleep(POLL_INTERVAL_SECONDS)
-                continue
+    while True:
+        with psycopg.connect(DB_DSN, row_factory=dict_row) as conn:
+            job = claim_next_job(conn)
+            conn.commit()  # releases the FOR UPDATE lock, confirms the claim
 
             if job is None:
                 time.sleep(POLL_INTERVAL_SECONDS)
-    except KeyboardInterrupt:
-        print("\nWorker stopped gracefully.")
+                continue
+
+            print(f"Claimed job {job['id']} ({job['job_type']})")
+            run_one_job(conn, job)
 
 
 if __name__ == "__main__":
